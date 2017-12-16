@@ -3,6 +3,10 @@
 This is the comment.
 """
 
+import argparse
+import pickle
+import random
+
 import cv2
 from keras.applications.imagenet_utils import _obtain_input_shape
 from keras.applications.vgg16 import WEIGHTS_PATH, WEIGHTS_PATH_NO_TOP
@@ -11,18 +15,30 @@ from keras.layers import GlobalAveragePooling2D, GlobalMaxPooling2D
 from keras.layers.convolutional import Convolution2D, MaxPooling2D, ZeroPadding2D, Conv2D
 from keras.layers.core import Flatten, Dense, Dropout
 from keras.models import *
-# from keras.applications.vgg16 import VGG16
+from keras.optimizers import SGD
 from keras.utils import layer_utils, get_file
 from sklearn.cross_validation import train_test_split
 
 __author__ = 'Liushen'
 
+parser = argparse.ArgumentParser(description="Liushen VGG16 model.")
+parser.add_argument("-batch_size", default=128, type=int, help="the batch size")
+parser.add_argument("-epochs", default=10, type=int, help="the epochs")
+parser.add_argument("-model", default="liushen.sgd.h5", type=str, help="the model file path")
+parser.add_argument("-train_data", default="liushen.train.dat", type=str, help="the train data file path")
+parser.add_argument("-test_data_dir", default=None, type=str, help="the test data directory path")
+parser.add_argument("-test_data_output", default="liushen.test.txt", type=str, help="the test data output file path")
+args = parser.parse_args()
+
 LABEL_DIM = 9
 CLASS_DICT = {'classN': 1, 'classM': 2, 'classI': 3, 'classE': 4,
               'classC': 5, 'classPA': 6, 'classA': 7, 'classPX': 8, 'classNO': 0}
-BATCH_SIZE = 10
-EPOCHS = 20
-MODEL_NAME = "liushen.model.h5"
+BATCH_SIZE = args.batch_size
+EPOCHS = args.epochs
+MODEL_NAME = args.model
+TRAIN_DATA_FILE = args.train_data
+TEST_DATA_DIR = args.test_data_dir
+TEST_DATA_OUT_FILE = args.test_data_output
 
 
 def custom_model(weights_path=None):
@@ -246,6 +262,13 @@ def get_y(label_list, d):
     return result
 
 
+def get_label(array, d):
+    result = {}
+    for k in d:
+        result[k] = array[d[k]]
+    return result
+
+
 def load_data():
     x_train_data = []
     y_train_data = []
@@ -254,18 +277,19 @@ def load_data():
             filename, labels = line.strip().split(",")
             labels = labels.split("|")
             img_filename = os.path.join("images_train", filename)
+            if labels[0] == "classNO" and random.random() > 0.65:
+                # %65概率跳过反例。。。
+                print(img_filename + " skipped.")
+                continue
             if os.path.exists(img_filename):
                 print(img_filename)
-                im = cv2.resize(cv2.imread(img_filename), (224, 224)).astype(np.float32)
-                im[:, :, 0] -= 128.0
-                im[:, :, 1] -= 128.0
-                im[:, :, 2] -= 128.0
+                im = img_file2vector(img_filename)
 
                 # x_train_data.append(im.transpose((2, 0, 1))) # for custom model
                 x_train_data.append(im)  # for VGG16
                 y_train_data.append(get_y(labels, CLASS_DICT))
-                if len(x_train_data) == 5000:
-                    break
+                # if len(x_train_data) == 5000:
+                #     break
     print("all file loaded.")
 
     train_x, test_x, train_y, test_y = train_test_split(x_train_data, y_train_data, train_size=0.9, random_state=0)
@@ -279,13 +303,37 @@ def load_data():
     return x_train, y_train, x_test, y_test
 
 
+def img_file2vector(img_filename):
+    im = cv2.resize(cv2.imread(img_filename), (224, 224)).astype(np.float32)
+    im[:, :, 0] -= 128.0
+    im[:, :, 1] -= 128.0
+    im[:, :, 2] -= 128.0
+    return im
+
+
 def main():
     if not os.path.exists(MODEL_NAME):
-        x_train, y_train, x_test, y_test = load_data()
+        if os.path.exists(TRAIN_DATA_FILE):
+            print("loading " + TRAIN_DATA_FILE)
+            with open(TRAIN_DATA_FILE, "rb") as fd:
+                x_train = pickle.load(fd)
+                y_train = pickle.load(fd)
+                x_test = pickle.load(fd)
+                y_test = pickle.load(fd)
+        else:
+            x_train, y_train, x_test, y_test = load_data()
+            print("saving " + TRAIN_DATA_FILE)
+            with open(TRAIN_DATA_FILE, "wb") as fd:
+                pickle.dump(x_train, fd)
+                pickle.dump(y_train, fd)
+                pickle.dump(x_test, fd)
+                pickle.dump(y_test, fd)
 
         # model = custom_model()
         model = VGG16(weights=None)
-        model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+        # model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+        model.compile(optimizer=SGD(lr=0.1, decay=1e-6, momentum=0.9, nesterov=True), loss='categorical_crossentropy')
+
         print("model to be trained.")
         model.fit(x_train, y_train,
                   batch_size=BATCH_SIZE,
@@ -295,6 +343,24 @@ def main():
         model.save(MODEL_NAME)
     else:
         model = load_model(MODEL_NAME)
+
+    if TEST_DATA_DIR is not None:
+        test_data = []
+        file_list = []
+        for each_infile in os.listdir(TEST_DATA_OUT_FILE):
+            if each_infile.endswith(".png") or each_infile.endswith(".bmp") or each_infile.endswith(".jpg"):
+                test_data.append(img_file2vector(os.path.join(TEST_DATA_DIR, each_infile)))
+                file_list.append(each_infile)
+        x_test = np.array(test_data).astype('float32')
+        result = model.predict(x_test)
+
+        with open(TEST_DATA_OUT_FILE, "w") as fd:
+            for i, r in enumerate(result):
+                label_dict = get_label(r, CLASS_DICT)
+
+                for each_label in label_dict:
+                    if label_dict[each_label] > 0.1:
+                        fd.write(",".join([file_list[i], each_label, "%.2f" % label_dict[each_label]]) + "\n")
 
 
 if __name__ == '__main__':
