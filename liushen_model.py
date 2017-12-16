@@ -24,7 +24,7 @@ parser = argparse.ArgumentParser(description="Liushen VGG16 model.")
 parser.add_argument("-batch_size", default=128, type=int, help="the batch size")
 parser.add_argument("-epochs", default=10, type=int, help="the epochs")
 parser.add_argument("-model", default="liushen.sgd.h5", type=str, help="the model file path")
-# parser.add_argument("-train_data", default="liushen.train.dat", type=str, help="the train data file path")
+parser.add_argument("-model_type", default="vgg16", type=str, help="the model type")
 parser.add_argument("-test_data_dir", default=None, type=str, help="the test data directory path")
 parser.add_argument("-test_data_output", default="liushen.test.txt", type=str, help="the test data output file path")
 parser.add_argument("-train_size", default=200000, type=int, help="the train data size")
@@ -32,16 +32,31 @@ parser.add_argument("-train_size", default=200000, type=int, help="the train dat
 args = parser.parse_args()
 
 LABEL_DIM = 9
-IMG_DIM = 512
+IMG_DIM = 224
 CLASS_DICT = {'classN': 1, 'classM': 2, 'classI': 3, 'classE': 4,
               'classC': 5, 'classPA': 6, 'classA': 7, 'classPX': 8, 'classNO': 0}
 BATCH_SIZE = args.batch_size
 EPOCHS = args.epochs
 MODEL_NAME = args.model
-# TRAIN_DATA_FILE = args.train_data
+MODEL_TYPE = args.model_type
 TEST_DATA_DIR = args.test_data_dir
 TEST_DATA_OUT_FILE = args.test_data_output
 TRAIN_SIZE = args.train_size
+
+
+def custom_model():
+    inputs = Input(shape=(IMG_DIM, IMG_DIM, 3))
+
+    # a layer instance is callable on a tensor, and returns a tensor
+    x = Dense(500, activation='relu')(inputs)
+    x = Dense(100, activation='relu')(x)
+    predictions = Dense(LABEL_DIM, activation='sigmoid')(x)
+
+    # This creates a model that includes
+    # the Input layer and three Dense layers
+    model = Model(inputs, predictions)
+
+    return model
 
 
 def VGG16(include_top=True, weights='imagenet', input_tensor=None, input_shape=None, pooling=None, classes=1000):
@@ -224,6 +239,7 @@ def get_label(array, d):
 def load_data():
     x_train_data = []
     y_train_data = []
+    file_count = 0
     with open("image_labels_train.csv", "r") as fd:
         for line in fd:
             filename, labels = line.strip().split(",")
@@ -234,7 +250,9 @@ def load_data():
                 print(img_filename + " skipped.")
                 continue
             if os.path.exists(img_filename):
-                print(img_filename)
+                file_count += 1
+                if file_count % 500 == 0:
+                    print(str(file_count) + " " + img_filename)
                 im = img_file2vector(img_filename)
 
                 # x_train_data.append(im.transpose((2, 0, 1))) # for custom model
@@ -267,10 +285,13 @@ def main():
     if not os.path.exists(MODEL_NAME):
         x_train, y_train, x_test, y_test = load_data()
 
-        # model = custom_model()
-        model = VGG16(weights=None)
-        # model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-        model.compile(optimizer=SGD(lr=0.01, decay=1e-6, momentum=0.9, nesterov=True), loss='categorical_crossentropy')
+        if MODEL_TYPE == "vgg16":
+            model = VGG16(weights=None)
+            model.compile(optimizer=SGD(lr=0.01, decay=1e-6, momentum=0.9, nesterov=True),
+                          loss='categorical_crossentropy')
+        else:
+            model = custom_model()
+            model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
         print("model to be trained.")
         model.fit(x_train, y_train,
@@ -284,11 +305,16 @@ def main():
     else:
         model = load_model(MODEL_NAME)
 
+    print("model is ok.")
     if TEST_DATA_DIR is not None:
         test_data = []
         file_list = []
+        file_count = 0
         for each_infile in os.listdir(TEST_DATA_DIR):
             if each_infile.endswith(".png") or each_infile.endswith(".bmp") or each_infile.endswith(".jpg"):
+                file_count += 1
+                if file_count % 500 == 0:
+                    print(str(file_count) + " " + each_infile)
                 test_data.append(img_file2vector(os.path.join(TEST_DATA_DIR, each_infile)))
                 file_list.append(each_infile)
         x_test = np.array(test_data).astype('float32')
