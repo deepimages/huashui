@@ -310,25 +310,39 @@ def main():
         test_data = []
         file_list = []
         file_count = 0
-        for each_infile in os.listdir(TEST_DATA_DIR):
-            if each_infile.endswith(".png") or each_infile.endswith(".bmp") or each_infile.endswith(".jpg"):
-                file_count += 1
-                if file_count % 500 == 0:
-                    print(str(file_count) + " " + each_infile)
-                test_data.append(img_file2vector(os.path.join(TEST_DATA_DIR, each_infile)))
-                file_list.append(each_infile)
-        x_test = np.array(test_data).astype('float32')
-        print("predicting.")
-        result = model.predict(x_test, batch_size=BATCH_SIZE)
-        print("predicted.")
-
         with open(TEST_DATA_OUT_FILE, "w") as fd:
+            for each_infile in os.listdir(TEST_DATA_DIR):
+                if each_infile.endswith(".png") or each_infile.endswith(".bmp") or each_infile.endswith(".jpg"):
+                    file_count += 1
+                    if file_count % 500 == 0:
+                        print(str(file_count) + " " + each_infile)
+                    test_data.append(img_file2vector(os.path.join(TEST_DATA_DIR, each_infile)))
+                    file_list.append(each_infile)
+
+                    if len(test_data) == BATCH_SIZE:
+                        x_test = np.array(test_data).astype('float32')
+                        print("predicting.")
+                        result = model.predict(x_test, batch_size=BATCH_SIZE, verbose=1)
+                        print("predicted.")
+
+                        for i, r in enumerate(result):
+                            label_dict = get_label(r, CLASS_DICT)
+                            for each_label in label_dict:
+                                if label_dict[each_label] > 0.1:
+                                    fd.write(
+                                        ",".join([file_list[i], each_label, "%.2f" % label_dict[each_label]]) + "\n")
+                        test_data = []
+            x_test = np.array(test_data).astype('float32')
+            print("predicting.")
+            result = model.predict(x_test, batch_size=BATCH_SIZE, verbose=1)
+            print("predicted.")
+
             for i, r in enumerate(result):
                 label_dict = get_label(r, CLASS_DICT)
-
                 for each_label in label_dict:
                     if label_dict[each_label] > 0.1:
-                        fd.write(",".join([file_list[i], each_label, "%.2f" % label_dict[each_label]]) + "\n")
+                        fd.write(
+                            ",".join([file_list[i], each_label, "%.2f" % label_dict[each_label]]) + "\n")
 
 
 if __name__ == '__main__':
