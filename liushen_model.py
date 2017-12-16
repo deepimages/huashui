@@ -4,7 +4,6 @@ This is the comment.
 """
 
 import argparse
-import pickle
 import random
 
 import cv2
@@ -25,9 +24,11 @@ parser = argparse.ArgumentParser(description="Liushen VGG16 model.")
 parser.add_argument("-batch_size", default=128, type=int, help="the batch size")
 parser.add_argument("-epochs", default=10, type=int, help="the epochs")
 parser.add_argument("-model", default="liushen.sgd.h5", type=str, help="the model file path")
-parser.add_argument("-train_data", default="liushen.train.dat", type=str, help="the train data file path")
+# parser.add_argument("-train_data", default="liushen.train.dat", type=str, help="the train data file path")
 parser.add_argument("-test_data_dir", default=None, type=str, help="the test data directory path")
 parser.add_argument("-test_data_output", default="liushen.test.txt", type=str, help="the test data output file path")
+parser.add_argument("-train_size", default=200000, type=int, help="the train data size")
+# parser.add_argument("-gray", default=False, type=bool, help="whether use gray data")
 args = parser.parse_args()
 
 LABEL_DIM = 9
@@ -36,9 +37,13 @@ CLASS_DICT = {'classN': 1, 'classM': 2, 'classI': 3, 'classE': 4,
 BATCH_SIZE = args.batch_size
 EPOCHS = args.epochs
 MODEL_NAME = args.model
-TRAIN_DATA_FILE = args.train_data
+# TRAIN_DATA_FILE = args.train_data
 TEST_DATA_DIR = args.test_data_dir
 TEST_DATA_OUT_FILE = args.test_data_output
+TRAIN_SIZE = args.train_size
+
+
+# USE_GRAY = args.gray
 
 
 def custom_model(weights_path=None):
@@ -277,7 +282,7 @@ def load_data():
             filename, labels = line.strip().split(",")
             labels = labels.split("|")
             img_filename = os.path.join("images_train", filename)
-            if labels[0] == "classNO" and random.random() > 0.65:
+            if labels[0] == "classNO" and random.random() < 0.65:
                 # %65概率跳过反例。。。
                 print(img_filename + " skipped.")
                 continue
@@ -288,8 +293,8 @@ def load_data():
                 # x_train_data.append(im.transpose((2, 0, 1))) # for custom model
                 x_train_data.append(im)  # for VGG16
                 y_train_data.append(get_y(labels, CLASS_DICT))
-                # if len(x_train_data) == 5000:
-                #     break
+                if len(x_train_data) > TRAIN_SIZE:
+                    break
     print("all file loaded.")
 
     train_x, test_x, train_y, test_y = train_test_split(x_train_data, y_train_data, train_size=0.9, random_state=0)
@@ -313,26 +318,12 @@ def img_file2vector(img_filename):
 
 def main():
     if not os.path.exists(MODEL_NAME):
-        if os.path.exists(TRAIN_DATA_FILE):
-            print("loading " + TRAIN_DATA_FILE)
-            with open(TRAIN_DATA_FILE, "rb") as fd:
-                x_train = pickle.load(fd)
-                y_train = pickle.load(fd)
-                x_test = pickle.load(fd)
-                y_test = pickle.load(fd)
-        else:
-            x_train, y_train, x_test, y_test = load_data()
-            print("saving " + TRAIN_DATA_FILE)
-            with open(TRAIN_DATA_FILE, "wb") as fd:
-                pickle.dump(x_train, fd)
-                pickle.dump(y_train, fd)
-                pickle.dump(x_test, fd)
-                pickle.dump(y_test, fd)
+        x_train, y_train, x_test, y_test = load_data()
 
         # model = custom_model()
         model = VGG16(weights=None)
         # model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-        model.compile(optimizer=SGD(lr=0.1, decay=1e-6, momentum=0.9, nesterov=True), loss='categorical_crossentropy')
+        model.compile(optimizer=SGD(lr=0.01, decay=1e-6, momentum=0.9, nesterov=True), loss='categorical_crossentropy')
 
         print("model to be trained.")
         model.fit(x_train, y_train,
@@ -340,19 +331,23 @@ def main():
                   epochs=EPOCHS,
                   verbose=1,
                   validation_data=(x_test, y_test))
+        print("model to be saved.")
         model.save(MODEL_NAME)
+        print("model saved!")
     else:
         model = load_model(MODEL_NAME)
 
     if TEST_DATA_DIR is not None:
         test_data = []
         file_list = []
-        for each_infile in os.listdir(TEST_DATA_OUT_FILE):
+        for each_infile in os.listdir(TEST_DATA_DIR):
             if each_infile.endswith(".png") or each_infile.endswith(".bmp") or each_infile.endswith(".jpg"):
                 test_data.append(img_file2vector(os.path.join(TEST_DATA_DIR, each_infile)))
                 file_list.append(each_infile)
         x_test = np.array(test_data).astype('float32')
-        result = model.predict(x_test)
+        print("predicting.")
+        result = model.predict(x_test, batch_size=BATCH_SIZE)
+        print("predicted.")
 
         with open(TEST_DATA_OUT_FILE, "w") as fd:
             for i, r in enumerate(result):
