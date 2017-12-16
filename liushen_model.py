@@ -11,8 +11,8 @@ from keras.applications.imagenet_utils import _obtain_input_shape
 from keras.applications.vgg16 import WEIGHTS_PATH, WEIGHTS_PATH_NO_TOP
 from keras.engine import get_source_inputs
 from keras.layers import GlobalAveragePooling2D, GlobalMaxPooling2D
-from keras.layers.convolutional import Convolution2D, MaxPooling2D, ZeroPadding2D, Conv2D
-from keras.layers.core import Flatten, Dense, Dropout
+from keras.layers.convolutional import MaxPooling2D, Conv2D
+from keras.layers.core import Flatten, Dense
 from keras.models import *
 from keras.optimizers import SGD
 from keras.utils import layer_utils, get_file
@@ -32,6 +32,7 @@ parser.add_argument("-train_size", default=200000, type=int, help="the train dat
 args = parser.parse_args()
 
 LABEL_DIM = 9
+IMG_DIM = 512
 CLASS_DICT = {'classN': 1, 'classM': 2, 'classI': 3, 'classE': 4,
               'classC': 5, 'classPA': 6, 'classA': 7, 'classPX': 8, 'classNO': 0}
 BATCH_SIZE = args.batch_size
@@ -41,60 +42,6 @@ MODEL_NAME = args.model
 TEST_DATA_DIR = args.test_data_dir
 TEST_DATA_OUT_FILE = args.test_data_output
 TRAIN_SIZE = args.train_size
-
-
-# USE_GRAY = args.gray
-
-
-def custom_model(weights_path=None):
-    model = Sequential()
-    model.add(ZeroPadding2D((1, 1), input_shape=(3, 224, 224)))
-    model.add(Convolution2D(64, 3, 3, activation='relu'))
-    model.add(ZeroPadding2D((1, 1)))
-    model.add(Convolution2D(64, 3, 3, activation='relu'))
-    model.add(MaxPooling2D((2, 2), strides=(2, 2)))
-
-    model.add(ZeroPadding2D((1, 1)))
-    model.add(Convolution2D(128, 3, 3, activation='relu'))
-    model.add(ZeroPadding2D((1, 1)))
-    model.add(Convolution2D(128, 3, 3, activation='relu'))
-    model.add(MaxPooling2D((2, 2), strides=(2, 2)))
-
-    model.add(ZeroPadding2D((1, 1)))
-    model.add(Convolution2D(256, 3, 3, activation='relu'))
-    model.add(ZeroPadding2D((1, 1)))
-    model.add(Convolution2D(256, 3, 3, activation='relu'))
-    model.add(ZeroPadding2D((1, 1)))
-    model.add(Convolution2D(256, 3, 3, activation='relu'))
-    model.add(MaxPooling2D((2, 2), strides=(2, 2)))
-
-    model.add(ZeroPadding2D((1, 1)))
-    model.add(Convolution2D(512, 3, 3, activation='relu'))
-    model.add(ZeroPadding2D((1, 1)))
-    model.add(Convolution2D(512, 3, 3, activation='relu'))
-    model.add(ZeroPadding2D((1, 1)))
-    model.add(Convolution2D(512, 3, 3, activation='relu'))
-    model.add(MaxPooling2D((2, 2), strides=(2, 2)))
-
-    model.add(ZeroPadding2D((1, 1)))
-    model.add(Convolution2D(512, 3, 3, activation='relu'))
-    model.add(ZeroPadding2D((1, 1)))
-    model.add(Convolution2D(512, 3, 3, activation='relu'))
-    model.add(ZeroPadding2D((1, 1)))
-    model.add(Convolution2D(512, 3, 3, activation='relu'))
-    model.add(MaxPooling2D((2, 2), strides=(2, 2)))
-
-    model.add(Flatten())
-    model.add(Dense(4096, activation='relu'))
-    model.add(Dropout(0.5))
-    model.add(Dense(4096, activation='relu'))
-    model.add(Dropout(0.5))
-    model.add(Dense(LABEL_DIM, activation='sigmoid'))
-
-    if weights_path:
-        model.load_weights(weights_path)
-
-    return model
 
 
 def VGG16(include_top=True, weights='imagenet', input_tensor=None, input_shape=None, pooling=None, classes=1000):
@@ -159,7 +106,7 @@ def VGG16(include_top=True, weights='imagenet', input_tensor=None, input_shape=N
                          ' as true, `classes` should be 1000')
     # Determine proper input shape
     input_shape = _obtain_input_shape(input_shape,
-                                      default_size=224,
+                                      default_size=IMG_DIM,
                                       min_size=48,
                                       data_format=K.image_data_format(),
                                       require_flatten=include_top,
@@ -309,7 +256,7 @@ def load_data():
 
 
 def img_file2vector(img_filename):
-    im = cv2.resize(cv2.imread(img_filename), (224, 224)).astype(np.float32)
+    im = cv2.resize(cv2.imread(img_filename), (IMG_DIM, IMG_DIM)).astype(np.float32)
     im[:, :, 0] -= 128.0
     im[:, :, 1] -= 128.0
     im[:, :, 2] -= 128.0
